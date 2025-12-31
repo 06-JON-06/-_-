@@ -17,13 +17,38 @@ app.innerHTML = `
           <option value="スイカ">スイカ</option>
           <option value="チェリー">チェリー</option>
         </select>
-        <!--
-        <span id="role-preview" class="role-preview">自動</span>
-        -->
+        <span id="role-preview" class="role-preview">次回: 自動</span>
     </div>
     <div id="message" class="message"></div>
   </div>
 `;
+
+// 成立した役を溜めるスタック（右上表示）
+const stackContainer = document.createElement('div');
+stackContainer.className = 'role-stack';
+stackContainer.id = 'role-stack';
+document.body.appendChild(stackContainer);
+
+let lastRole = null;
+
+function renderStack() {
+  stackContainer.innerHTML = '';
+  const el = document.createElement('div');
+  el.className = 'role-item';
+  if (!lastRole) {
+    el.innerHTML = `<span class="role-symbol">—</span><span class="role-text">保存なし</span>`;
+  } else {
+    el.innerHTML = `<span class="role-symbol">${lastRole.symbol || ''}</span><span class="role-text">${lastRole.role}</span>`;
+  }
+  stackContainer.appendChild(el);
+}
+
+function pushRoleToStack(role, symbol) {
+  // はずれは保存しない（既存の保存は維持）
+  if (!role || role === 'はずれ') return;
+  lastRole = { role, symbol };
+  renderStack();
+}
 
 const machine = document.getElementById('slot-machine');
 const lever = document.getElementById('lever');
@@ -103,6 +128,11 @@ function spinOnce() {
   // 選択が手動の場合はそれを優先
   const selected = roleSelect ? roleSelect.value : 'auto';
   const assignedRole = (selected && selected !== 'auto') ? selected : pickRole();
+  // レバー時に抽選された次回の役をプレビュー表示
+  if (rolePreview) {
+    const sym = roleToSymbol[assignedRole] || '';
+    rolePreview.textContent = `次回: ${sym} ${assignedRole}`.trim();
+  }
   // 目標となるセンターシンボルのインデックス（はずれは後でランダムに決める）
   const targetSymbol = roleToSymbol[assignedRole];
   const targetIndex = targetSymbol ? symbols.indexOf(targetSymbol) : -1;
@@ -161,12 +191,18 @@ function spinOnce() {
     if (assignedRole === 'はずれ') {
       message.textContent = 'はずれ...';
       message.classList.remove('win');
+      // プレビューはスピン後は未確定表示に戻す
+      if (rolePreview) rolePreview.textContent = '次回: 自動';
       return;
     }
 
     // それ以外は決まった役を表示
     message.textContent = `${assignedRole}！`;
     message.classList.add('win');
+    // 成立役を単一スロットに保存
+    pushRoleToStack(assignedRole, roleToSymbol[assignedRole]);
+    // プレビューはスピン後は未確定表示に戻す
+    if (rolePreview) rolePreview.textContent = '次回: 自動';
   }
 }
 
