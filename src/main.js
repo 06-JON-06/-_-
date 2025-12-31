@@ -1,13 +1,25 @@
 import './style.css';
 
-const symbols = ['🍒','🍋','🔔','⭐','7️⃣','🍀','🍇','🍉'];
+const symbols = ['🍒','🍋','🔔','⭐','7️⃣','🍀','🍇','🍉','🔁'];
 
 const app = document.getElementById('app');
 app.innerHTML = `
   <div class="slot-wrapper">
     <div class="slot-machine" id="slot-machine"></div>
     <div class="controls">
-      <button id="lever" class="lever">Pull Lever</button>
+        <button id="lever" class="lever">Pull Lever</button>
+        <label for="role-select" class="role-label">当たる役:</label>
+        <select id="role-select">
+          <option value="auto">自動</option>
+          <option value="はずれ">はずれ</option>
+          <option value="リプレイ">リプレイ</option>
+          <option value="ベル">ベル</option>
+          <option value="スイカ">スイカ</option>
+          <option value="チェリー">チェリー</option>
+        </select>
+        <!--
+        <span id="role-preview" class="role-preview">自動</span>
+        -->
     </div>
     <div id="message" class="message"></div>
   </div>
@@ -16,6 +28,8 @@ app.innerHTML = `
 const machine = document.getElementById('slot-machine');
 const lever = document.getElementById('lever');
 const message = document.getElementById('message');
+const roleSelect = document.getElementById('role-select');
+const rolePreview = document.getElementById('role-preview');
 
 const reels = [];
 const REEL_COUNT = 3;
@@ -54,8 +68,44 @@ function spinOnce() {
   if (spinning) return;
   spinning = true;
   lever.disabled = true;
+  if (roleSelect) roleSelect.disabled = true;
   lever.classList.add('active');
   message.textContent = '';
+
+  // 役を内部で決定する
+  const roles = ['はずれ', 'リプレイ', 'ベル', 'スイカ', 'チェリー'];
+  const roleToSymbol = {
+    'はずれ': null,
+    'リプレイ': '🔁',
+    'ベル': '🔔',
+    'スイカ': '🍉',
+    'チェリー': '🍒'
+  };
+  // 簡単な確率配分（合計1）
+  const weights = {
+    'はずれ': 0.6,
+    'リプレイ': 0.15,
+    'ベル': 0.15,
+    'スイカ': 0.06,
+    'チェリー': 0.04
+  };
+
+  function pickRole() {
+    const rnd = Math.random();
+    let acc = 0;
+    for (const r of roles) {
+      acc += weights[r] || 0;
+      if (rnd < acc) return r;
+    }
+    return 'はずれ';
+  }
+
+  // 選択が手動の場合はそれを優先
+  const selected = roleSelect ? roleSelect.value : 'auto';
+  const assignedRole = (selected && selected !== 'auto') ? selected : pickRole();
+  // 目標となるセンターシンボルのインデックス（はずれは後でランダムに決める）
+  const targetSymbol = roleToSymbol[assignedRole];
+  const targetIndex = targetSymbol ? symbols.indexOf(targetSymbol) : -1;
 
   // Durations so last reel stops at ~2000ms
   const durations = [1600, 1800, 2000];
@@ -70,9 +120,18 @@ function spinOnce() {
       renderReel(reel);
       const elapsed = Date.now() - start;
       if (elapsed >= durations[idx]) {
-        // ensure final symbol aligns exactly
+        // 終了時に役に合わせてセンターを固定する
+        if (targetIndex >= 0) {
+          // 目標シンボルに合わせてインデックスを設定
+          reel.idx = targetIndex;
+        } else {
+          // はずれ：揃わないようにランダムに決める（全て同じにならないよう配慮）
+          // まずランダムに決める
+          reel.idx = Math.floor(Math.random() * symbols.length);
+        }
+        renderReel(reel);
         finished += 1;
-        if (finished === REEL_COUNT) finishSpin();
+        if (finished === REEL_COUNT) finishSpin(assignedRole);
         return;
       }
       const t = elapsed / durations[idx];
@@ -82,19 +141,32 @@ function spinOnce() {
     step();
   });
 
-  function finishSpin() {
+  function finishSpin(assignedRole) {
     spinning = false;
     lever.disabled = false;
+    if (roleSelect) roleSelect.disabled = false;
     lever.classList.remove('active');
-    const centers = reels.map(r => r.center.textContent);
-    const allSame = centers.every(s => s === centers[0]);
-    if (allSame) {
-      message.textContent = `大当たり！ ${centers[0]} x${REEL_COUNT}`;
-      message.classList.add('win');
-    } else {
-      message.textContent = '残念...';
-      message.classList.remove('win');
+    let centers = reels.map(r => r.center.textContent);
+    let allSame = centers.every(s => s === centers[0]);
+
+    // assignedRole が はずれ のときに偶然揃ってしまったら崩す
+    if (assignedRole === 'はずれ' && allSame) {
+      // 1つ目のリールを変えて揃わないようにする
+      reels[0].idx = (reels[0].idx + 1) % symbols.length;
+      renderReel(reels[0]);
+      centers = reels.map(r => r.center.textContent);
+      allSame = centers.every(s => s === centers[0]);
     }
+
+    if (assignedRole === 'はずれ') {
+      message.textContent = 'はずれ...';
+      message.classList.remove('win');
+      return;
+    }
+
+    // それ以外は決まった役を表示
+    message.textContent = `${assignedRole}！`;
+    message.classList.add('win');
   }
 }
 
@@ -102,5 +174,12 @@ lever.addEventListener('click', spinOnce);
 document.addEventListener('keydown', (e) => {
   if (e.key === ' ' || e.key === 'Enter') spinOnce();
 });
+
+// プレビュー更新と制御
+if (roleSelect && rolePreview) {
+  roleSelect.addEventListener('change', () => {
+    rolePreview.textContent = roleSelect.value === 'auto' ? '自動' : roleSelect.value;
+  });
+}
 
 console.log('Slot machine (3 reels) ready');
